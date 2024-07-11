@@ -2,15 +2,23 @@ use core::marker::PhantomData;
 
 use plonky2::field::extension::Extendable;
 use plonky2::field::secp256k1_scalar::Secp256K1Scalar;
+use plonky2::field::types::PrimeField64;
+use plonky2::field::types::PrimeField;
+use plonky2::field::types::Field;
+
 use plonky2::hash::hash_types::RichField;
 use plonky2::plonk::circuit_builder::CircuitBuilder;
+use plonky2::iop::witness::Witness;
 
 use crate::curve::curve_types::Curve;
 use crate::curve::secp256k1::Secp256K1;
+use crate::curve::ecdsa::ECDSAPublicKey;
+use crate::curve::ecdsa::ECDSASignature;
 use crate::gadgets::curve::{AffinePointTarget, CircuitBuilderCurve};
 use crate::gadgets::curve_fixed_base::fixed_base_curve_mul_circuit;
 use crate::gadgets::glv::CircuitBuilderGlv;
 use crate::gadgets::nonnative::{CircuitBuilderNonNative, NonNativeTarget};
+use crate::nonnative::biguint::WitnessBigUint;
 
 #[derive(Clone, Debug)]
 pub struct ECDSASecretKeyTarget<C: Curve>(pub NonNativeTarget<C::ScalarField>);
@@ -27,9 +35,9 @@ pub struct ECDSASignatureTarget<C: Curve> {
 pub fn verify_message_circuit<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     msg: NonNativeTarget<Secp256K1Scalar>,
-    r: &NonNativeTarget<Secp256K1Scalar>,
-    s: &NonNativeTarget<Secp256K1Scalar>,
-    pk_input_target: &AffinePointTarget<Secp256K1>,
+    r: NonNativeTarget<Secp256K1Scalar>,
+    s: NonNativeTarget<Secp256K1Scalar>,
+    pk_input_target: AffinePointTarget<Secp256K1>,
 ) {
     builder.curve_assert_valid(&pk_input_target);
 
@@ -46,6 +54,34 @@ pub fn verify_message_circuit<F: RichField + Extendable<D>, const D: usize>(
         _phantom: PhantomData,
     };
     builder.connect_nonnative(&r, &x);
+}
+
+pub trait WitnessECDSA<F: Field + PrimeField64, C: Curve>: Witness<F> {
+    fn set_ecdsa_pk_target(&mut self, target: &ECDSAPublicKeyTarget<C>, value: &ECDSAPublicKey<C>);
+    fn set_ecdsa_sig_target(&mut self, target: &ECDSASignatureTarget<C>, value: &ECDSASignature<C>);
+}
+
+impl<T: Witness<F>, F: Field + PrimeField64, C: Curve> WitnessECDSA<F, C> for T {
+    fn set_ecdsa_pk_target(&mut self, target: &ECDSAPublicKeyTarget<C>, pk: &ECDSAPublicKey<C>) {
+        /*
+        pub struct ECDSAPublicKeyTarget<C: Curve> {
+            pub point: AffinePointTarget<C>,
+        }
+        */
+        self.set_biguint_target(&target.0.x.value, &pk.0.x.to_canonical_biguint());
+        self.set_biguint_target(&target.0.y.value, &pk.0.y.to_canonical_biguint());
+    }
+
+    fn set_ecdsa_sig_target(&mut self, target: &ECDSASignatureTarget<C>, sig: &ECDSASignature<C>) {
+        /*
+        pub struct ECDSASignatureTarget<C: Curve> {
+            pub r: NonNativeTarget<C::ScalarField>,
+            pub s: NonNativeTarget<C::ScalarField>,
+        }
+        */
+        self.set_biguint_target(&target.r.value, &sig.r.to_canonical_biguint());
+        self.set_biguint_target(&target.s.value, &sig.s.to_canonical_biguint());
+    }
 }
 
 #[cfg(test)]
