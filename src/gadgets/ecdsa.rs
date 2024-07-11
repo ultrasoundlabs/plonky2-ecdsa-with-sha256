@@ -35,18 +35,19 @@ pub struct ECDSASignatureTarget<C: Curve> {
 pub fn verify_message_circuit<F: RichField + Extendable<D>, const D: usize>(
     builder: &mut CircuitBuilder<F, D>,
     msg: NonNativeTarget<Secp256K1Scalar>,
-    r: NonNativeTarget<Secp256K1Scalar>,
-    s: NonNativeTarget<Secp256K1Scalar>,
-    pk_input_target: AffinePointTarget<Secp256K1>,
+    sig: ECDSASignatureTarget<Secp256K1>,
+    pk: ECDSAPublicKeyTarget<Secp256K1>,
 ) {
-    builder.curve_assert_valid(&pk_input_target);
+    let ECDSASignatureTarget { r, s } = sig;
+
+    builder.curve_assert_valid(&pk.0);
 
     let c = builder.inv_nonnative(&s);
     let u1 = builder.mul_nonnative(&msg, &c);
     let u2 = builder.mul_nonnative(&r, &c);
 
     let point1 = fixed_base_curve_mul_circuit(builder, Secp256K1::GENERATOR_AFFINE, &u1);
-    let point2 = builder.glv_mul(&pk_input_target, &u2);
+    let point2 = builder.glv_mul(&pk.0, &u2);
     let point = builder.curve_add(&point1, &point2);
 
     let x = NonNativeTarget::<Secp256K1Scalar> {
